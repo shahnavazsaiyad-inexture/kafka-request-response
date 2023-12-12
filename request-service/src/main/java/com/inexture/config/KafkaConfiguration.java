@@ -3,6 +3,7 @@ package com.inexture.config;
 import com.inexture.dto.Message;
 import org.apache.kafka.clients.admin.NewTopic;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
+import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.common.serialization.StringSerializer;
@@ -16,11 +17,14 @@ import org.springframework.kafka.config.ConcurrentKafkaListenerContainerFactory;
 import org.springframework.kafka.config.TopicBuilder;
 import org.springframework.kafka.core.*;
 import org.springframework.kafka.listener.ConcurrentMessageListenerContainer;
+import org.springframework.kafka.listener.ContainerProperties;
 import org.springframework.kafka.requestreply.AggregatingReplyingKafkaTemplate;
 import org.springframework.kafka.requestreply.ReplyingKafkaTemplate;
 import org.springframework.kafka.support.serializer.JsonDeserializer;
 import org.springframework.kafka.support.serializer.JsonSerializer;
 
+import java.time.Duration;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.function.Predicate;
@@ -39,7 +43,9 @@ public class KafkaConfiguration {
         config.put(ConsumerConfig.GROUP_ID_CONFIG, environment.getProperty("spring.kafka.consumer.group-id"));
         config.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
         config.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, JsonDeserializer.class.getName());
-        return new DefaultKafkaConsumerFactory<>(config, new StringDeserializer(), new JsonDeserializer<>(Message.class));
+        config.put(JsonDeserializer.TRUSTED_PACKAGES, "com.inexture.dto");
+
+        return new DefaultKafkaConsumerFactory<>(config, new StringDeserializer(), new JsonDeserializer<>());
     }
 
     @Bean
@@ -51,7 +57,7 @@ public class KafkaConfiguration {
     }
     @Bean
     public ConcurrentMessageListenerContainer<String, Message> repliesContainer(ConcurrentKafkaListenerContainerFactory<String, Message> containerFactory) {
-        ConcurrentMessageListenerContainer<String, Message> repliesContainer = containerFactory.createContainer("my-reply-topic");
+        ConcurrentMessageListenerContainer<String, Message> repliesContainer = containerFactory.createContainer("my-reply-topic", "acknowledgement-topic");
         repliesContainer.getContainerProperties().setGroupId("replies-group");
         repliesContainer.setAutoStartup(false);
         return repliesContainer;
@@ -72,9 +78,11 @@ public class KafkaConfiguration {
     }
 
     @Bean
-    public ReplyingKafkaTemplate<String, Message, Message> replyingKafkaTemplate(ProducerFactory<String, Message> producerFactory,
+    public AcknowledgeReplyingKafkaTemplate<String, Message, Message> replyingKafkaTemplate(ProducerFactory<String, Message> producerFactory,
                                                                                  ConcurrentMessageListenerContainer<String, Message> replyContainer) {
-        return new ReplyingKafkaTemplate<>(producerFactory, replyContainer);
+        AcknowledgeReplyingKafkaTemplate<String, Message, Message> kafkaTemplate = new AcknowledgeReplyingKafkaTemplate<>(producerFactory, replyContainer);
+        kafkaTemplate.setDefaultReplyTimeout(Duration.ofSeconds(20));
+        return kafkaTemplate;
     }
 
     @Bean

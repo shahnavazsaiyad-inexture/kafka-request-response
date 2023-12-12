@@ -90,6 +90,7 @@ public class KafkaConfiguration {
         return TopicBuilder.name("my-request-topic")
                 .partitions(2)
                 .replicas(1)
+                .config("retention.ms", "21000")
                 .build();
     }
 
